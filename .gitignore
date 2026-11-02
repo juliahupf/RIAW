@@ -139,7 +139,7 @@ irwa_env/
 
 # Part 2 (local only)
 .vscode/
-myapp/search/evaluation.py
+
 project_progress/part_2/README.md
 project_progress/part_2/evaluation_output/
 project_progress/part_2/part2.ipynb
