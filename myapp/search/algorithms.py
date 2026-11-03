@@ -38,7 +38,7 @@ def create_inverted_index(docs, field="all_terms"):
 
 
 def tf_weight(tf):
-    return 1 + math.log10(tf)
+    return 1 + math.log2(tf)
 
 
 def create_tfidf_index(docs, field="all_terms"):
@@ -48,7 +48,7 @@ def create_tfidf_index(docs, field="all_terms"):
     """
     index = create_inverted_index(docs, field)
     num_docs = len(docs)
-    idf = {term: math.log10(num_docs / len(postings)) for term, postings in index.items()}
+    idf = {term: math.log2(num_docs / len(postings)) for term, postings in index.items()}
 
     squared_norms = defaultdict(float)
     for term, postings in index.items():
