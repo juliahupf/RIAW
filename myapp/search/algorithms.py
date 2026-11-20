@@ -1,8 +1,10 @@
 import math
 import re
+import zlib
 from collections import Counter, defaultdict
 
 import nltk
+import numpy as np
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 
@@ -88,3 +90,84 @@ def search_in_corpus(query, index, idf, doc_norms):
     query_terms = build_terms(query)
     scores = score_tfidf(query_terms, conjunctive_match(query_terms, index), index, idf, doc_norms)
     return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+
+
+# ---------------------------------------------------------------- Part 3
+
+def rank(scores):
+    """Best document first. Ties are broken by pid so runs are reproducible"""
+    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+
+
+def create_bm25_index(docs, field="all_terms"):
+    """
+    Precompute what BM25 needs: the inverted index, the BM25 idf, the length of each document and the average length
+    """
+    index = create_inverted_index(docs, field)
+    num_docs = len(docs)
+    bm25_idf = {term: math.log(1 + (num_docs - len(postings) + 0.5) / (len(postings) + 0.5))
+                for term, postings in index.items()}
+    doc_lengths = {doc["pid"]: len(doc[field]) for doc in docs}
+    avg_length = sum(doc_lengths.values()) / num_docs
+    return index, bm25_idf, doc_lengths, avg_length
+
+
+def score_bm25(query_terms, pids, index, bm25_idf, doc_lengths, avg_length, k1=1.2, b=0.75):
+    """BM25 score of each document in pids. Each query term is counted once"""
+    scores = {}
+    for pid in pids:
+        length_norm = k1 * (1 - b + b * doc_lengths[pid] / avg_length)
+        scores[pid] = sum(bm25_idf[t] * index[t][pid] * (k1 + 1) / (index[t][pid] + length_norm)
+                          for t in set(query_terms) if pid in index.get(t, {}))
+    return scores
+
+
+def score_custom(query_terms, bm25_scores, doc_store, mean_rating, weights=(0.5, 0.3, 0.15, 0.05), stock_penalty=0.5):
+    """
+    Our score: text relevance (BM25), query terms found in the title, rating and discount.
+    Out-of-stock products keep only stock_penalty of their score
+    :param bm25_scores: {pid: BM25 score} of the documents that passed the AND filter
+    :param mean_rating: rating used when a product has none, so that unrated products are neither rewarded nor punished
+    """
+    w_text, w_title, w_rating, w_discount = weights
+    max_bm25 = max(bm25_scores.values(), default=0) or 1
+    unique_terms = set(query_terms)
+    scores = {}
+    for pid, bm25 in bm25_scores.items():
+        doc = doc_store[pid]
+        title_match = len(unique_terms & set(doc["title_terms"])) / len(unique_terms)
+        rating = doc["average_rating"] if doc["average_rating"] is not None else mean_rating
+        discount = doc["discount"] or 0
+        score = (w_text * bm25 / max_bm25 + w_title * title_match
+                 + w_rating * (rating - 1) / 4 + w_discount * discount / 100)
+        scores[pid] = score * stock_penalty if doc["out_of_stock"] else score
+    return scores
+
+
+def _stable_hash(text):
+    """Python's hash() changes between runs; word2vec uses this one so that its vectors are reproducible"""
+    return zlib.crc32(text.encode("utf-8"))
+
+
+def train_word2vec(docs, field="all_terms", vector_size=100, seed=0):
+    """Skip-gram word2vec trained on the processed terms of the collection"""
+    from gensim.models import Word2Vec   # imported here: Part 2 does not need gensim
+    return Word2Vec(sentences=[doc[field] for doc in docs], vector_size=vector_size, window=5, min_count=2,
+                    sg=1, epochs=5, workers=1, seed=seed, hashfxn=_stable_hash)
+
+
+def text_vector(terms, model):
+    """Average of the word vectors of the terms; terms outside the vocabulary are skipped"""
+    vectors = [model.wv[t] for t in terms if t in model.wv]
+    return np.mean(vectors, axis=0) if vectors else np.zeros(model.vector_size)
+
+
+def score_word2vec(query_terms, pids, doc_vectors, model):
+    """Cosine similarity between the averaged word2vec vector of the query and of each document"""
+    query_vector = text_vector(query_terms, model)
+    query_norm = np.linalg.norm(query_vector)
+    scores = {}
+    for pid in pids:
+        norm = query_norm * np.linalg.norm(doc_vectors[pid])
+        scores[pid] = float(query_vector @ doc_vectors[pid] / norm) if norm else 0.0
+    return scores
