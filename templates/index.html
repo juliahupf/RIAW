@@ -1,18 +1,21 @@
 {% extends "base.html" %}
 {% block page_title %}{{ page_title }}{% endblock %}
 {% block content %}
-    <div class="centered">
-        <p>&nbsp;</p>
-        <p>&nbsp;</p>
-        <p>&nbsp;</p>
-        <form class="d-flex" method="POST" onSubmit='return validate();' action="/search">
-            <input class="form-control me-2" name="search-query" type="search" placeholder="Search" aria-label="Search"
-                   autofocus="autofocus">
-            <button class="btn btn-primary" type="submit" onclick='this.form.submit();'>Search</button>
-            <input name="upf-irwa-hidden" type="hidden" value="123">
+    <div class="home">
+        <h1 class="home-title">Find your next outfit</h1>
+        <p class="text-muted">Search among 28,080 fashion products. You can write a budget, for example
+            <em>men running shoes under 1000</em>.</p>
+        <form class="search-form" method="GET" action="{{ url_for('search') }}">
+            <input class="form-control search-text" name="q" type="search" placeholder="What are you looking for?"
+                   aria-label="Search" autofocus="autofocus" required>
+            <button class="btn btn-primary" type="submit">Search</button>
         </form>
-        <p>&nbsp;</p>
-        <p>&nbsp;</p>
-        <p>&nbsp;</p>
+        <div class="examples">
+            Try:
+            {% for example in ["women cotton kurta", "men running shoes under 1500", "winter hooded jacket men",
+                               "polo neck t-shirt men", "white sneakers women"] %}
+                <a href="{{ url_for('search', q=example) }}">{{ example }}</a>{% if not loop.last %} &middot; {% endif %}
+            {% endfor %}
+        </div>
     </div>
 {% endblock %}

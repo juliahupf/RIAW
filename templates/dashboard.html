@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block page_title %}{{ page_title }}{% endblock %}
+{% block container_class %}container-wide{% endblock %}
 
 {% block header %}
     <!-- Next tag loads Charts.js https://www.chartjs.org/docs/latest/ -->
@@ -9,23 +10,165 @@
 {% endblock %}
 
 {% block content %}
+    {% set k = data.kpis %}
+    <div class="dash-header">
+        <h3>Web analytics dashboard</h3>
+        <a class="small" href="{{ url_for('analytics_export') }}">Download all data (JSON)</a>
+    </div>
 
-    <!--
-    Examples of what to show in Dashboard:
+    <h5 class="section">Traffic</h5>
+    <div class="kpis">
+        <div class="kpi"><div class="kpi-value">{{ k.visitors }}</div><div class="kpi-label">Visitors</div>
+            <div class="kpi-help">Different browsers (cookie)</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.sessions }}</div><div class="kpi-label">Sessions</div>
+            <div class="kpi-help">Visits; a session ends after 30 min without requests</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.requests }}</div><div class="kpi-label">Page requests</div>
+            <div class="kpi-help">All HTTP requests except static files</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.avg_session_min }} min</div><div class="kpi-label">Avg. session</div>
+            <div class="kpi-help">From first to last request of a session</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.avg_latency_ms }} ms</div><div class="kpi-label">Avg. response</div>
+            <div class="kpi-help">Server time per request</div></div>
+    </div>
 
-    - Ranking of visited documents (from results page)
-    - Visitor's preferred browsers
-    - Visitor's city (from IP)
-    - preferred queries ranking
-    - preferred terms
-    - etc.
+    <h5 class="section">Search engine</h5>
+    <div class="kpis">
+        <div class="kpi"><div class="kpi-value">{{ k.queries }}</div><div class="kpi-label">Queries</div>
+            <div class="kpi-help">{{ k.unique_queries }} different ones</div></div>
+        <div class="kpi"><div class="kpi-value">{{ "%.0f"|format(k.ctr * 100) }}%</div><div class="kpi-label">Click-through rate</div>
+            <div class="kpi-help">Queries with at least one click</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.mrr_first_click }}</div><div class="kpi-label">MRR of first click</div>
+            <div class="kpi-help">1 / rank of the first clicked result</div></div>
+        <div class="kpi"><div class="kpi-value">{{ "%.0f"|format(k.zero_result_rate * 100) }}%</div><div class="kpi-label">Zero-result queries</div>
+            <div class="kpi-help">{{ "%.0f"|format(k.relaxed_rate * 100) }}% more needed the relaxed search</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.median_dwell_s }} s</div><div class="kpi-label">Median dwell time</div>
+            <div class="kpi-help">Time on a product before coming back</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.avg_terms }}</div><div class="kpi-label">Terms per query</div>
+            <div class="kpi-help">{{ k.avg_queries_per_session }} queries and {{ k.avg_missions_per_session }} missions per session</div></div>
+        <div class="kpi"><div class="kpi-value">{{ k.avg_search_ms }} ms</div><div class="kpi-label">Search time</div>
+            <div class="kpi-help">Ranking time inside the engine</div></div>
+    </div>
 
-    -->
+    <div class="charts">
+        <div class="chart-card">
+            <h6>Queries per hour of the day</h6>
+            <canvas id="hours"></canvas>
+            <p class="explain">When people search. It helps to plan the load of the server and when to show offers.</p>
+        </div>
+        <div class="chart-card">
+            <h6>Clicks by rank position</h6>
+            <canvas id="ranks"></canvas>
+            <p class="explain">How far down people go. Most clicks on the first positions means the ranking puts good
+                products on top, but it also shows position bias: users trust the first results.</p>
+        </div>
+        <div class="chart-card">
+            <h6>Most frequent query terms</h6>
+            <canvas id="terms"></canvas>
+            <p class="explain">Stemmed terms of all queries: what users look for most.</p>
+        </div>
+        <div class="chart-card">
+            <h6>Dwell time on clicked products</h6>
+            <canvas id="dwell"></canvas>
+            <p class="explain">Time between opening a product and coming back to the results. Very short visits
+                (&lt; 10 s) suggest the product was not what the user wanted; long ones suggest real interest.</p>
+        </div>
+        <div class="chart-card">
+            <h6>Query length (terms)</h6>
+            <canvas id="length"></canvas>
+            <p class="explain">Number of terms after pre-processing. Long queries are more likely to have no product
+                with all the terms (AND), which is why the engine has a relaxed search.</p>
+        </div>
+        <div class="chart-card">
+            <h6>Queries per mission</h6>
+            <canvas id="missions"></canvas>
+            <p class="explain">A mission is a sequence of queries of the same session with the same goal (they share a
+                term). Missions with several queries are users refining a search that did not satisfy them.</p>
+        </div>
+        <div class="chart-card small-chart">
+            <h6>Browsers</h6><canvas id="browsers"></canvas>
+        </div>
+        <div class="chart-card small-chart">
+            <h6>Operating systems</h6><canvas id="os"></canvas>
+        </div>
+        <div class="chart-card small-chart">
+            <h6>Devices</h6><canvas id="devices"></canvas>
+            <p class="explain">Visitor context of each session, from the User-Agent header.</p>
+        </div>
+    </div>
 
-    <h3>Dashboard</h3>
-    <iframe src="/plot_number_of_views" width="600" height="400" style="border: none;"></iframe>
-
-
+    <div class="tables">
+        <div class="table-card">
+            <h6>Top queries</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Query</th><th class="num">Times</th></tr></thead>
+                <tbody>{% for q, n in data.top_queries %}<tr><td>{{ q }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        <div class="table-card">
+            <h6>Queries without results</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Query</th><th class="num">Times</th></tr></thead>
+                <tbody>{% for q, n in data.zero_queries %}<tr><td>{{ q }}</td><td class="num">{{ n }}</td></tr>
+                {% else %}<tr><td colspan="2" class="text-muted">None</td></tr>{% endfor %}</tbody>
+            </table>
+            <p class="explain">Products users want and the shop does not have (or words the engine does not know).</p>
+        </div>
+        <div class="table-card wide">
+            <h6>Most clicked products</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Product</th><th>pid</th><th class="num">Clicks</th></tr></thead>
+                <tbody>{% for d in data.top_docs %}
+                    <tr><td><a href="{{ url_for('doc_details', pid=d.pid) }}">{{ d.title }}</a></td>
+                        <td><code>{{ d.pid }}</code></td><td class="num">{{ d.clicks }}</td></tr>
+                {% else %}<tr><td colspan="3" class="text-muted">No clicks yet</td></tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        <div class="table-card wide">
+            <h6>Latest sessions</h6>
+            <table class="table table-sm">
+                <thead><tr><th>Session</th><th>Start</th><th>Browser</th><th>OS</th><th>Device</th>
+                    <th class="num">Queries</th><th class="num">Missions</th><th class="num">Clicks</th><th class="num">Minutes</th></tr></thead>
+                <tbody>{% for s in data.sessions_table %}
+                    <tr><td><code>{{ s.session }}</code></td><td>{{ s.start }}</td><td>{{ s.browser }}</td><td>{{ s.os }}</td>
+                        <td>{{ s.device }}</td><td class="num">{{ s.queries }}</td><td class="num">{{ s.missions }}</td>
+                        <td class="num">{{ s.clicks }}</td><td class="num">{{ s.minutes }}</td></tr>
+                {% endfor %}</tbody>
+            </table>
+        </div>
+    </div>
 {% endblock %}
 
+{% block scripts %}
+    <script>
+        const data = {{ data|tojson }};
+        const red = "#c8102e", grey = "#8a8f98";
+        const palette = ["#c8102e", "#404246", "#e0868f", "#8a8f98", "#f2b8bf", "#c9ccd1", "#7a0a1c"];
+        const pairs = list => ({labels: list.map(p => p[0]), values: list.map(p => p[1])});
 
+        function bar(id, labels, values, horizontal = false) {
+            new Chart(document.getElementById(id), {
+                type: "bar",
+                data: {labels: labels, datasets: [{data: values, backgroundColor: red}]},
+                options: {indexAxis: horizontal ? "y" : "x", plugins: {legend: {display: false}},
+                          scales: {x: {beginAtZero: true}, y: {beginAtZero: true}}}
+            });
+        }
+        function doughnut(id, list) {
+            const p = pairs(list);
+            new Chart(document.getElementById(id), {
+                type: "doughnut",
+                data: {labels: p.labels, datasets: [{data: p.values, backgroundColor: palette}]},
+                options: {plugins: {legend: {position: "bottom"}}}
+            });
+        }
+
+        bar("hours", [...Array(24).keys()].map(h => h + "h"), data.queries_by_hour);
+        let p = pairs(data.clicks_by_rank); bar("ranks", p.labels, p.values);
+        p = pairs(data.top_terms); bar("terms", p.labels, p.values, true);
+        p = pairs(data.dwell_bins); bar("dwell", p.labels, p.values);
+        p = pairs(data.query_length); bar("length", p.labels, p.values);
+        p = pairs(data.queries_per_mission); bar("missions", p.labels.map(n => n + " queries"), p.values);
+        doughnut("browsers", data.browsers);
+        doughnut("os", data.os);
+        doughnut("devices", data.devices);
+    </script>
+{% endblock %}

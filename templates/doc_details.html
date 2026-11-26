@@ -1,18 +1,50 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Document Detail - IRWA Search Engine</title>
-</head>
-<body>
-<div><a href="/" >Home</a></div>
-<div><a href="/stats" >Stats</a></div>
-<div><a href="/dashboard" >Dashboard</a></div>
-<h1>Document Detail Page</h1>
-<p>This is a placeholder for document details.</p>
-<p>Here you can display more information about the document.</p>
-<p>For example, you might show the full text of the document, metadata, or other relevant details.</p>
-<p>You can also include links to related documents or resources.</p>
-<p>Feel free to customize this page to fit the needs of your application.</p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block page_title %}{{ page_title }}{% endblock %}
+{% block content %}
+    {% if back_url %}
+        <a class="small" href="{{ back_url }}">&larr; Back to the results</a>
+    {% endif %}
+    <div class="details">
+        <div class="details-images">
+            {% for image in (doc.images or [])[:4] %}
+                <img src="{{ image }}" alt="" loading="lazy" onerror="this.style.display='none'">
+            {% endfor %}
+        </div>
+        <div class="details-main">
+            <h2>{{ doc.title }}</h2>
+            <div class="doc-meta">
+                {% if doc.brand %}<span>{{ doc.brand }}</span> &middot;{% endif %}
+                <span>{{ doc.category }} / {{ doc.sub_category }}</span>
+                {% if rank %} &middot; <span>result #{{ rank }} of your search</span>{% endif %}
+            </div>
+            <div class="doc-price large">
+                {% if doc.selling_price is not none %}<strong>Rs {{ doc.selling_price|int }}</strong>{% endif %}
+                {% if doc.actual_price and doc.actual_price != doc.selling_price %}
+                    <s class="text-muted">Rs {{ doc.actual_price|int }}</s>
+                {% endif %}
+                {% if doc.discount %}<span class="discount">{{ doc.discount|int }}% off</span>{% endif %}
+            </div>
+            <p>
+                {% if doc.average_rating is not none %}<span class="rating">&#9733; {{ doc.average_rating }} / 5</span>
+                {% else %}<span class="text-muted">No rating yet</span>{% endif %}
+                &middot;
+                {% if doc.out_of_stock %}<span class="badge badge-secondary">Out of stock</span>
+                {% else %}<span class="badge badge-success">In stock</span>{% endif %}
+            </p>
+            {% if doc.description %}<p>{{ doc.description }}</p>{% endif %}
+            <a class="btn btn-primary btn-sm" href="{{ url_for('outbound', pid=doc.pid, qid=qid, rank=rank) }}"
+               target="_blank" rel="noopener">View in the original shop</a>
+        </div>
+    </div>
+
+    <h5 class="mt-4">Product details</h5>
+    <table class="table table-sm details-table">
+        <tbody>
+        {% for key, value in (doc.product_details or {}).items() %}
+            <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+        {% endfor %}
+        <tr><th>Seller</th><td>{{ doc.seller or "Unknown" }}</td></tr>
+        <tr><th>Product id (pid)</th><td><code>{{ doc.pid }}</code></td></tr>
+        </tbody>
+    </table>
+{% endblock %}

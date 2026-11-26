@@ -1,27 +1,141 @@
 {% extends "base.html" %}
 {% block page_title %}{{ page_title }}{% endblock %}
-{% block content %}
-    Found <strong>{{ found_counter }}</strong> results...
-    <hr>
-    {% if rag_response %}
-        <div class="mb-4 p-3" style="border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9;">
-            <h5>AI-Generated Summary:</h5>
-            <p>{{ rag_response }}</p>
-        </div>
-    {% endif %}
-    <hr>
-    {% for item in results_list %}
-        <div class="pb-3">
-            <div class="doc-title">
-                <a href="{{ item.url }}">{{ item.title }}...
-                </a>
-            </div>
-            <div class="doc-desc">
-                {{ item.doc_date }} — {{ item.description }}
-            </div>
+{% block container_class %}container-wide{% endblock %}
 
-        </div>
-
-    {% endfor %}
+{% block topbar_search %}
+    <form class="topbar-search" method="GET" action="{{ url_for('search') }}">
+        <input class="form-control form-control-sm" name="q" type="search" value="{{ response.query }}" aria-label="Search">
+        <button class="btn btn-primary btn-sm" type="submit">Search</button>
+    </form>
 {% endblock %}
 
+{% block content %}
+    <div class="results-layout">
+        <aside class="filters">
+            <form method="GET" action="{{ url_for('search') }}">
+                <input type="hidden" name="q" value="{{ response.query }}">
+                <input type="hidden" name="qid" value="{{ qid }}">
+                <label for="sort">Sort by</label>
+                <select class="form-control form-control-sm" id="sort" name="sort">
+                    {% for option in sort_options %}
+                        <option value="{{ option }}" {% if filters.sort == option %}selected{% endif %}>
+                            {{ {"relevance": "Relevance", "price_asc": "Price: low to high", "price_desc": "Price: high to low",
+                                "rating": "Rating", "discount": "Discount"}[option] }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <label for="max_price">Max price (Rs)</label>
+                <input class="form-control form-control-sm" id="max_price" name="max_price" type="number" min="0"
+                       value="{{ filters.max_price|int if filters.max_price is not none else '' }}">
+                <label for="min_rating">Min rating</label>
+                <select class="form-control form-control-sm" id="min_rating" name="min_rating">
+                    <option value="">Any</option>
+                    {% for r in [3, 3.5, 4, 4.5] %}
+                        <option value="{{ r }}" {% if filters.min_rating == r %}selected{% endif %}>{{ r }}+</option>
+                    {% endfor %}
+                </select>
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="in_stock" name="in_stock" value="1"
+                           {% if filters.in_stock_only %}checked{% endif %}>
+                    <label class="form-check-label" for="in_stock">In stock only</label>
+                </div>
+                <button class="btn btn-outline-secondary btn-sm btn-block mt-3" type="submit">Apply</button>
+            </form>
+        </aside>
+
+        <section class="results">
+            <div class="results-info">
+                <strong>{{ "{:,}".format(response.total) }}</strong> results for <em>{{ response.query }}</em>
+                <span class="text-muted">({{ "%.1f"|format(response.elapsed_ms) }} ms)</span>
+                {% if response.price_from_query %}
+                    <span class="badge badge-light">budget: up to Rs {{ response.price_from_query|int }}</span>
+                {% endif %}
+                {% if response.relaxed and response.total %}
+                    <div class="alert alert-warning py-1 px-2 mt-2 mb-0">No product contains all your words, so we show
+                        products that contain all of them but one.</div>
+                {% endif %}
+            </div>
+
+            {% if response.page == 1 %}
+                <div class="rag-box" id="rag-box" data-url="{{ url_for('rag_summary', qid=qid) }}">
+                    <div class="rag-title">AI-generated summary</div>
+                    <div id="rag-text" class="text-muted">Thinking about the results...</div>
+                </div>
+            {% endif %}
+
+            {% if not response.hits %}
+                <p class="mt-4">No products found. Try fewer or more general words.</p>
+            {% endif %}
+
+            {% for hit in response.hits %}
+                {% set doc = hit.document %}
+                <article class="result">
+                    {% if doc.images %}
+                        <img class="result-img" src="{{ doc.images[0] }}" alt="" loading="lazy"
+                             onerror="this.style.visibility='hidden'">
+                    {% else %}
+                        <div class="result-img"></div>
+                    {% endif %}
+                    <div class="result-body">
+                        <a class="doc-title" href="{{ url_for('doc_details', pid=doc.pid, qid=qid, rank=hit.rank) }}">
+                            {{ doc.title }}</a>
+                        <div class="doc-meta">
+                            <span class="rank">#{{ hit.rank }}</span>
+                            {% if doc.brand %}<span>{{ doc.brand }}</span> &middot;{% endif %}
+                            <span>{{ doc.sub_category }}</span>
+                            {% if doc.out_of_stock %}<span class="badge badge-secondary">Out of stock</span>{% endif %}
+                        </div>
+                        <div class="doc-price">
+                            {% if doc.selling_price is not none %}<strong>Rs {{ doc.selling_price|int }}</strong>{% endif %}
+                            {% if doc.actual_price and doc.actual_price != doc.selling_price %}
+                                <s class="text-muted">Rs {{ doc.actual_price|int }}</s>
+                            {% endif %}
+                            {% if doc.discount %}<span class="discount">{{ doc.discount|int }}% off</span>{% endif %}
+                            {% if doc.average_rating is not none %}
+                                <span class="rating">&#9733; {{ doc.average_rating }}</span>
+                            {% else %}
+                                <span class="text-muted small">no rating</span>
+                            {% endif %}
+                        </div>
+                        {% if doc.description %}
+                            <div class="doc-desc">{{ doc.description|truncate(230) }}</div>
+                        {% endif %}
+                        <a class="small" href="{{ url_for('outbound', pid=doc.pid, qid=qid, rank=hit.rank) }}"
+                           target="_blank" rel="noopener">View in the shop &rarr;</a>
+                    </div>
+                </article>
+            {% endfor %}
+
+            {% if response.pages > 1 %}
+                <nav class="pager">
+                    {% if response.page > 1 %}
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('search', page=response.page - 1, **page_args) }}">&larr; Previous</a>
+                    {% endif %}
+                    <span>Page {{ response.page }} of {{ response.pages }}</span>
+                    {% if response.page < response.pages %}
+                        <a class="btn btn-sm btn-outline-secondary"
+                           href="{{ url_for('search', page=response.page + 1, **page_args) }}">Next &rarr;</a>
+                    {% endif %}
+                </nav>
+            {% endif %}
+        </section>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        const box = document.getElementById("rag-box");
+        if (box) {
+            fetch(box.dataset.url)
+                .then(r => r.ok ? r.json() : Promise.reject(r.status))
+                .then(data => {
+                    const text = document.getElementById("rag-text");
+                    text.innerHTML = data.html;
+                    text.classList.remove("text-muted");
+                    box.classList.add("rag-" + data.status);
+                })
+                .catch(() => { document.getElementById("rag-text").textContent = "The summary is not available."; });
+        }
+    </script>
+{% endblock %}
