@@ -17,7 +17,7 @@ Create a file named `.env` in the repository root:
 
 ```
 GROQ_API_KEY=your_groq_key
-GROQ_MODEL=llama-3.1-8b-instant
+GROQ_MODEL=openai/gpt-oss-20b
 SECRET_KEY=any_random_text
 DATA_FILE_PATH=data/fashion_products_dataset.json
 ```
